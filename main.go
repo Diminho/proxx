@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/proxx/cmd"
 	"log"
+
+	"github.com/proxx/cmd"
 )
 
 func main() {

@@ -3,6 +3,7 @@ package game
 import (
 	"fmt"
 	"math/rand"
+	"os"
 	"time"
 )
 
@@ -16,84 +17,90 @@ type boardState string
 const (
 	blackHoled boardState = "blackHoled"
 	cleared    boardState = "cleared"
+
+	//padding when printing
+	regularPaddingLen    = 3
+	blackHoledPaddingLen = 2
 )
 
-type board struct {
+// Board represents board playground
+type Board struct {
 	boardState boardState
-	numNodes   []*Cell
+	numNodes   []*cell
 	// represents relations between vertexes (cells)
-	adjacencyList map[string][]*Cell
+	adjacencyList map[string][]*cell
 	// represents board as two-dimensional slice. this is for printing the board
-	board           [][]*Cell
-	cellList        map[string]*Cell
-	sideCellsNumber int
+	board           [][]*cell
+	cellList        map[string]*cell
+	sidecellsNumber int
 	// number of cells to be revealed in order to win
 	toBeRevealed     int
 	stateChangeHooks []func()
 }
 
-func NewBoard(sideCellsNumber, blackHolesNumber int) *board {
-	b := &board{
-		numNodes:        make([]*Cell, 0, sideCellsNumber*sideCellsNumber),
-		adjacencyList:   make(map[string][]*Cell),
-		sideCellsNumber: sideCellsNumber,
-		cellList:        make(map[string]*Cell, sideCellsNumber*sideCellsNumber),
-		toBeRevealed:    sideCellsNumber*sideCellsNumber - blackHolesNumber,
+// NewBoard init new board as playground
+func NewBoard(sideCellsNumber, blackHolesNumber int) *Board {
+	totalCellNumber := sideCellsNumber * sideCellsNumber
+	b := &Board{
+		numNodes:        make([]*cell, 0, totalCellNumber),
+		adjacencyList:   make(map[string][]*cell),
+		sidecellsNumber: sideCellsNumber,
+		cellList:        make(map[string]*cell, totalCellNumber),
+		toBeRevealed:    totalCellNumber - blackHolesNumber,
 	}
 
 	blackHolesLocations := distributeBlackHoles(sideCellsNumber, blackHolesNumber)
-	b.board = b.generateArtifacts(blackHolesLocations, sideCellsNumber, sideCellsNumber)
+	b.board = b.generateBoard(blackHolesLocations, sideCellsNumber, sideCellsNumber)
 
 	b.buildGraph(b.board, sideCellsNumber, sideCellsNumber)
 	return b
 }
 
-func (b *board) setBoardState(boardState boardState) {
+func (b *Board) setBoardState(boardState boardState) {
 	b.boardState = boardState
 	b.execStateChangeHooks()
 }
 
-func (b *board) WinCondition() bool {
+// WinState represents winning state
+func (b *Board) WinState() bool {
 	return b.boardState == cleared
 }
 
-func (b *board) LoseCondition() bool {
+// LoseState represents lose state
+func (b *Board) LoseState() bool {
 	return b.boardState == blackHoled
 }
 
-func (b *board) decrementToBeRevealed() {
-	fmt.Println("BEFORE ", b.toBeRevealed)
-
+func (b *Board) decrementToBeRevealed() {
 	b.toBeRevealed--
-	fmt.Println("AFTER ", b.toBeRevealed)
-
 	if b.toBeRevealed == 0 {
 		b.setBoardState(cleared)
 	}
 }
 
-func (b *board) execStateChangeHooks() {
+func (b *Board) execStateChangeHooks() {
 	for _, exec := range b.stateChangeHooks {
 		exec()
 	}
 }
 
-func (b *board) SetOnStateChangeHook(hookFn func()) {
+// SetOnStateChangeHook set hook on every board state change
+func (b *Board) SetOnStateChangeHook(hookFn func()) {
 	b.stateChangeHooks = append(b.stateChangeHooks, hookFn)
 }
 
 // Click executes click on the given cell. click parameter is x,y coordinates ([]int{x,y})
-func (b *board) Click(click []int) error {
-	if click[0] > b.sideCellsNumber || click[1] > b.sideCellsNumber {
-		return fmt.Errorf(clickOutOfBoundsFmt, click[0], click[1], b.sideCellsNumber, b.sideCellsNumber)
+func (b *Board) Click(click []int) error {
+	if click[0] > b.sidecellsNumber || click[1] > b.sidecellsNumber {
+		return fmt.Errorf(clickOutOfBoundsFmt, click[0], click[1], b.sidecellsNumber, b.sidecellsNumber)
 	}
 
-	cell := b.cellList[cellIdentificationKey(click[0], click[1])]
-	if cell.state.isOpened() {
-		fmt.Println("already opened cell ", click[0], click[1])
-		return nil
+	currentCell := b.cellList[cellIdentificationKey(click[0], click[1])]
+	if currentCell.state.isOpened() {
+		_, err := fmt.Fprintln(os.Stdout, "cell already opened:")
+		return err
 	}
-	if cell.value.isBlackHole() {
+	if currentCell.value.isBlackHole() {
 		b.setBoardState(blackHoled)
 		b.revealEntireBoard()
 		return nil
@@ -103,18 +110,18 @@ func (b *board) Click(click []int) error {
 }
 
 // revealCells uses breadth first search to get connected cells with void value
-func (b *board) revealCells(cellID string) error {
-	cell := b.cellList[cellID]
+func (b *Board) revealCells(cellID string) error {
+	currentCell := b.cellList[cellID]
 
-	cell.state.setToOpened()
-	if cell.value.isTouchingBlackHoles() {
+	currentCell.state.setToOpened()
+	if currentCell.value.isTouchingBlackHoles() {
 		b.decrementToBeRevealed()
 		return nil
 	}
 	visited := make(map[string]struct{})
-	queue := make([]*Cell, 0)
+	queue := make([]*cell, 0)
 
-	queue = append(queue, cell)
+	queue = append(queue, currentCell)
 
 	for len(queue) > 0 {
 		currentNode := queue[0]
@@ -127,7 +134,6 @@ func (b *board) revealCells(cellID string) error {
 		// visit
 		visited[currentNodeID] = struct{}{}
 		currentNode.state.setToOpened()
-		fmt.Println("OPENING ", currentNodeID)
 		b.decrementToBeRevealed()
 		// skip revealing neighbors since current cell is touching to the black hole
 		if !currentNode.value.isVoid() {
@@ -149,22 +155,28 @@ func (b *board) revealCells(cellID string) error {
 	return nil
 }
 
-func (b *board) revealEntireBoard() {
-	for _, cell := range b.cellList {
-		cell.state.setToOpened()
+func (b *Board) revealEntireBoard() {
+	for _, c := range b.cellList {
+		c.state.setToOpened()
 	}
 }
 
-func (b *board) buildGraph(artifacts [][]*Cell, rows, cols int) {
+func (b *Board) buildGraph(artifacts [][]*cell, rows, cols int) {
+	b.addVertexes(artifacts, rows, cols)
+	b.addEdges(artifacts, rows, cols)
+}
+
+func (b *Board) addVertexes(artifacts [][]*cell, rows, cols int) {
 	for i := 0; i < rows; i++ {
 		for j := 0; j < cols; j++ {
 			b.addVertex(artifacts[i][j])
 		}
 	}
+}
 
-	// defining directions (neighbours) places related to given node
+func (b *Board) addEdges(artifacts [][]*cell, rows, cols int) {
+	// defining directions (neighbors) places related to given node
 	directions := [][]int{{1, 0}, {0, 1}, {-1, 0}, {0, -1}}
-
 	// adding edges that connect vertices based of neighbor placement
 	for i := 0; i < rows; i++ {
 		for j := 0; j < cols; j++ {
@@ -213,7 +225,7 @@ func cellIdentificationKey(x, y int) string {
 	return fmt.Sprintf(keyCoordinatesFmt, x, y)
 }
 
-func (b *board) addEdge(node1, node2 *Cell) {
+func (b *Board) addEdge(node1, node2 *cell) {
 	node1Key := cellIdentificationKey(node1.x, node1.y)
 	list1, ok1 := b.adjacencyList[node1Key]
 	if !ok1 {
@@ -223,80 +235,87 @@ func (b *board) addEdge(node1, node2 *Cell) {
 	b.adjacencyList[node1Key] = list1
 }
 
-func (b *board) addVertex(node *Cell) {
+func (b *Board) addVertex(node *cell) {
 	key := cellIdentificationKey(node.x, node.y)
 	b.numNodes = append(b.numNodes, node)
 	_, ok := b.adjacencyList[key]
 	if !ok {
-		b.adjacencyList[key] = []*Cell{}
+		b.adjacencyList[key] = []*cell{}
 	}
 }
 
-type Cell struct {
-	state CellState
-	value CellValue
+// cell represents cell data
+type cell struct {
+	state cellState
+	value cellValue
 	x, y  int
 }
 
-type CellState int
+// cellState represents state of cell
+type cellState int
 
 const (
-	opened CellState = 1
-	closed CellState = 0
+	opened cellState = 1
+	closed cellState = 0
 )
 
-func (cs *CellState) setToOpened() {
+func (cs *cellState) setToOpened() {
 	*cs = opened
 }
 
-func (cs CellState) isOpened() bool {
+func (cs cellState) isOpened() bool {
 	return cs == opened
 }
 
-func (cs CellState) isClosed() bool {
+func (cs cellState) isClosed() bool {
 	return cs == closed
 }
 
-type CellValue int
+type cellValue int
 
 const (
-	void      CellValue = 0
-	blackHole CellValue = -1
+	void      cellValue = 0
+	blackHole cellValue = -1
 )
 
-func (c CellValue) isBlackHole() bool {
+func (c cellValue) isBlackHole() bool {
 	return c == blackHole
 }
 
-func (c CellValue) isVoid() bool {
+func (c cellValue) isVoid() bool {
 	return c == void
 }
 
-func (c CellValue) isTouchingBlackHoles() bool {
+func (c cellValue) isTouchingBlackHoles() bool {
 	return !c.isVoid() && !c.isBlackHole()
 }
 
 // icon is cell (vertex) view for board printing. E.g. if cell is closed then "c" will be displayed when printed
-var stateToIconMapping = map[CellState]string{
+var stateToIconMapping = map[cellState]string{
 	opened: "o",
 	closed: "c",
 }
 
-func (b *board) generateArtifacts(blackHoles [][]int, rows, cols int) [][]*Cell {
-	artifacts := make([][]*Cell, rows)
+func (b *Board) generateBoard(blackHoles [][]int, rows, cols int) [][]*cell {
+	artifacts := make([][]*cell, rows)
 	for i := 0; i < rows; i++ {
-		artifacts[i] = make([]*Cell, cols)
+		artifacts[i] = make([]*cell, cols)
 		for j := 0; j < cols; j++ {
-			cell := &Cell{
+			c := &cell{
 				value: void,
 				x:     i,
 				y:     j,
 			}
-			artifacts[i][j] = cell
-			b.cellList[cellIdentificationKey(i, j)] = cell
+			artifacts[i][j] = c
+			b.cellList[cellIdentificationKey(i, j)] = c
 		}
 	}
 
+	return setArtifacts(blackHoles, artifacts, rows, cols)
+}
+
+// setArtifacts sets black holes and cell counter that touch black holes
+func setArtifacts(blackHoles [][]int, artifacts [][]*cell, rows, cols int) [][]*cell {
 	for _, r := range blackHoles {
 		rowI, colI := r[0], r[1]
 		artifacts[rowI][colI].value = blackHole
@@ -313,16 +332,17 @@ func (b *board) generateArtifacts(blackHoles [][]int, rows, cols int) [][]*Cell 
 }
 
 // Print prints current state of board
-func (b *board) Print() {
+func (b *Board) Print() {
 	for i, row := range b.board {
 		for col := range row {
 			var (
 				cellView, paddingLen string
 			)
-			if b.LoseCondition() && b.board[i][col].state.isOpened() {
-				paddingLen = fmt.Sprintf("%d", 2)
+
+			if b.LoseState() && b.board[i][col].state.isOpened() {
+				paddingLen = fmt.Sprintf("%d", blackHoledPaddingLen)
 			} else {
-				paddingLen = fmt.Sprintf("%d", 3)
+				paddingLen = fmt.Sprintf("%d", regularPaddingLen)
 			}
 
 			if b.board[i][col].state.isClosed() {
@@ -338,16 +358,16 @@ func (b *board) Print() {
 }
 
 // PrintStateless is for debugging (or verifying that game works correctly) purposes
-func (b *board) PrintStateless() {
+func (b *Board) PrintStateless() {
 	for i, row := range b.board {
 		for col := range row {
 			var (
 				paddingLen string
 			)
-			if b.LoseCondition() {
-				paddingLen = fmt.Sprintf("%d", 2)
+			if b.LoseState() {
+				paddingLen = fmt.Sprintf("%d", blackHoledPaddingLen)
 			} else {
-				paddingLen = fmt.Sprintf("%d", 3)
+				paddingLen = fmt.Sprintf("%d", regularPaddingLen)
 			}
 
 			fmt.Printf("%v %"+paddingLen+"s", b.board[i][col].value, "")
