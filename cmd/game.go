@@ -29,7 +29,10 @@ func start() *cobra.Command {
 				return err
 			}
 
-			b := game.NewBoard(cellNumber, blackHoles)
+			b, err := game.NewBoard(cellNumber, blackHoles)
+			if err != nil {
+				return err
+			}
 			gameInstance := game.NewGame(b)
 
 			return gameInstance.Start(os.Stdin)

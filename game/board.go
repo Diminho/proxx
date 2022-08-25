@@ -56,7 +56,7 @@ type Board struct {
 }
 
 // NewBoard init new board as playground
-func NewBoard(sideCellsNumber, blackHolesNumber int) *Board {
+func NewBoard(sideCellsNumber, blackHolesNumber int) (*Board, error) {
 	totalCellNumber := sideCellsNumber * sideCellsNumber
 	b := &Board{
 		adjacencyList:   make(map[string][]*cell),
@@ -67,11 +67,18 @@ func NewBoard(sideCellsNumber, blackHolesNumber int) *Board {
 		cols:            sideCellsNumber,
 	}
 
+	if totalCellNumber < blackHolesNumber {
+		return nil, fmt.Errorf(
+			"number of blackholes [%d] is bigger than max amount of board cells [%d]. Quiting game",
+			blackHolesNumber,
+			totalCellNumber)
+	}
+
 	blackHolesLocations := distributeBlackHoles(sideCellsNumber, blackHolesNumber)
 	b.board = b.generateBoard(blackHolesLocations)
 
 	b.buildGraph(b.board)
-	return b
+	return b, nil
 }
 
 func (b *Board) setBoardState(boardState boardState) {
@@ -394,4 +401,3 @@ func (b *Board) Print() {
 		fmt.Println()
 	}
 }
-

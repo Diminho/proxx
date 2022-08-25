@@ -10,7 +10,8 @@ import (
 
 func TestBoard_addEdge(t *testing.T) {
 	type fields struct {
-		rows, cols int
+		rows, cols, blackHolesNumber int
+		blackHoleLocations           [][]int
 	}
 	type args struct {
 		node1 *cell
@@ -33,6 +34,9 @@ func TestBoard_addEdge(t *testing.T) {
 			fields: fields{
 				rows: 3,
 				cols: 3,
+				blackHoleLocations: [][]int{
+					{0, 1},
+				},
 			},
 			args: args{
 				node1: &cell{
@@ -48,7 +52,17 @@ func TestBoard_addEdge(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := NewBoard(tt.fields.rows, tt.fields.cols)
+			totalCellNumber := tt.fields.rows * tt.fields.cols
+			b := &Board{
+				adjacencyList:   make(map[string][]*cell),
+				sideCellsNumber: tt.fields.rows,
+				cellList:        make(map[string]*cell, totalCellNumber),
+				toBeRevealed:    totalCellNumber - tt.fields.blackHolesNumber,
+				rows:            tt.fields.rows,
+				cols:            tt.fields.cols,
+			}
+			b.board = b.generateBoard(tt.fields.blackHoleLocations)
+
 			b.addEdge(tt.args.node1, tt.args.node2)
 
 			assert.True(t, tt.verifyFn(b, tt.args.node1))
@@ -67,9 +81,10 @@ func TestBoard_addEdges(t *testing.T) {
 		stateChangeHooks []func()
 	}
 	type args struct {
-		rows             int
-		cols             int
-		blackHolesNumber int
+		rows               int
+		cols               int
+		blackHolesNumber   int
+		blackHoleLocations [][]int
 	}
 	tests := []struct {
 		name     string
@@ -92,9 +107,16 @@ func TestBoard_addEdges(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := NewBoard(tt.args.rows, tt.args.cols)
-			blackHolesLocations := distributeBlackHoles(tt.args.rows, tt.args.blackHolesNumber)
-			b.board = b.generateBoard(blackHolesLocations)
+			totalCellNumber := tt.args.rows * tt.args.cols
+			b := &Board{
+				adjacencyList:   make(map[string][]*cell),
+				sideCellsNumber: tt.args.rows,
+				cellList:        make(map[string]*cell, totalCellNumber),
+				toBeRevealed:    totalCellNumber - tt.args.blackHolesNumber,
+				rows:            tt.args.rows,
+				cols:            tt.args.cols,
+			}
+			b.board = b.generateBoard(tt.args.blackHoleLocations)
 
 			b.addEdges(b.board)
 			assert.True(t, tt.verifyFn(b))
@@ -103,11 +125,11 @@ func TestBoard_addEdges(t *testing.T) {
 }
 
 func TestBoard_addVertexes(t *testing.T) {
-
 	type args struct {
-		rows             int
-		cols             int
-		blackHolesNumber int
+		rows               int
+		cols               int
+		blackHolesNumber   int
+		blackHoleLocations [][]int
 	}
 	tests := []struct {
 		name     string
@@ -139,9 +161,16 @@ func TestBoard_addVertexes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := NewBoard(tt.args.rows, tt.args.cols)
-			blackHolesLocations := distributeBlackHoles(tt.args.rows, tt.args.blackHolesNumber)
-			b.board = b.generateBoard(blackHolesLocations)
+			totalCellNumber := tt.args.rows * tt.args.cols
+			b := &Board{
+				adjacencyList:   make(map[string][]*cell),
+				sideCellsNumber: tt.args.rows,
+				cellList:        make(map[string]*cell, totalCellNumber),
+				toBeRevealed:    totalCellNumber - tt.args.blackHolesNumber,
+				rows:            tt.args.rows,
+				cols:            tt.args.cols,
+			}
+			b.board = b.generateBoard(tt.args.blackHoleLocations)
 
 			b.addVertexes(b.board)
 			assert.True(t, tt.verifyFn(b))
@@ -181,16 +210,16 @@ func Test_distributeBlackHoles(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			actual := distributeBlackHoles(tt.args.sideCount, tt.args.blackHolesTargetNumber)
 			assert.Equal(t, tt.expectedLen, len(actual))
-
 		})
 	}
 }
 
 func Test_setArtifacts(t *testing.T) {
 	type args struct {
-		blackHoles [][]int
-		rows       int
-		cols       int
+		blackHoleLocations [][]int
+		rows               int
+		cols               int
+		blackHolesNumber   int
 	}
 	tests := []struct {
 		name string
@@ -200,7 +229,7 @@ func Test_setArtifacts(t *testing.T) {
 		{
 			name: "one_black_hole",
 			args: args{
-				blackHoles: [][]int{
+				blackHoleLocations: [][]int{
 					{0, 0},
 				},
 				rows: 3,
@@ -272,7 +301,7 @@ func Test_setArtifacts(t *testing.T) {
 		{
 			name: "two_black_holes",
 			args: args{
-				blackHoles: [][]int{
+				blackHoleLocations: [][]int{
 					{0, 0},
 					{2, 2},
 				},
@@ -346,10 +375,18 @@ func Test_setArtifacts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := NewBoard(tt.args.rows, tt.args.cols)
+			totalCellNumber := tt.args.rows * tt.args.cols
+			b := &Board{
+				adjacencyList:   make(map[string][]*cell),
+				sideCellsNumber: tt.args.rows,
+				cellList:        make(map[string]*cell, totalCellNumber),
+				toBeRevealed:    totalCellNumber - tt.args.blackHolesNumber,
+				rows:            tt.args.rows,
+				cols:            tt.args.cols,
+			}
 			emptyBoard := b.initBoard()
 
-			actual := b.setItems(tt.args.blackHoles, emptyBoard)
+			actual := b.setItems(tt.args.blackHoleLocations, emptyBoard)
 			assert.Equal(t, tt.want, actual)
 		})
 	}
@@ -357,13 +394,14 @@ func Test_setArtifacts(t *testing.T) {
 
 // since this func is just initialization so only to verify if cells are not nil
 func Test_initBoard(t *testing.T) {
-	type fields struct {
-		rows int
-		cols int
+	type args struct {
+		rows             int
+		cols             int
+		blackHolesNumber int
 	}
 	tests := []struct {
 		name     string
-		fields   fields
+		args     args
 		verifyFn func([][]*cell) bool
 		want     [][]*cell
 	}{
@@ -384,7 +422,15 @@ func Test_initBoard(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := NewBoard(tt.fields.rows, tt.fields.cols)
+			totalCellNumber := tt.args.rows * tt.args.cols
+			b := &Board{
+				adjacencyList:   make(map[string][]*cell),
+				sideCellsNumber: tt.args.rows,
+				cellList:        make(map[string]*cell, totalCellNumber),
+				toBeRevealed:    totalCellNumber - tt.args.blackHolesNumber,
+				rows:            tt.args.rows,
+				cols:            tt.args.cols,
+			}
 			actual := b.initBoard()
 
 			assert.True(t, tt.verifyFn(actual))
