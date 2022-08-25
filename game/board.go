@@ -12,6 +12,15 @@ const (
 	clickOutOfBoundsFmt = "click coordinate [%d %d] is out of board bounds %d x %d"
 )
 
+// icon is cell (vertex) view for board printing. E.g. if cell is closed then "c" will be displayed when printed
+func stateToIconMapping() map[cellState]string {
+	return map[cellState]string{
+		openedState:     "o",
+		closedState:     "c",
+		blackHoledState: "H",
+	}
+}
+
 type boardState string
 
 const (
@@ -19,8 +28,7 @@ const (
 	cleared    boardState = "cleared"
 
 	//padding when printing
-	regularPaddingLen    = 3
-	blackHoledPaddingLen = 2
+	paddingLen = "2"
 )
 
 // Board represents board playground
@@ -157,6 +165,10 @@ func (b *Board) revealCells(cellID string) error {
 
 func (b *Board) revealEntireBoard() {
 	for _, c := range b.cellList {
+		if c.value == blackHole {
+			c.state.setToBlackHoled()
+			continue
+		}
 		c.state.setToOpened()
 	}
 }
@@ -194,37 +206,6 @@ func (b *Board) addEdges(artifacts [][]*cell, rows, cols int) {
 	}
 }
 
-// @TODO make distribution even
-func distributeBlackHoles(sideCount, blackHolesTargetNumber int) [][]int {
-	//bh - black hole.
-	bhLocations := make([][]int, 0, blackHolesTargetNumber)
-
-	occupiedPositions := make(map[string]struct{}, blackHolesTargetNumber)
-
-	var blackHolesPlaced int
-	for blackHolesPlaced < blackHolesTargetNumber {
-		rand.Seed(time.Now().UnixNano())
-
-		x := rand.Intn(sideCount)
-		y := rand.Intn(sideCount)
-
-		position := fmt.Sprintf("%d_%d", x, y)
-		_, ok := occupiedPositions[position]
-		if ok {
-			continue
-		}
-		bhLocations = append(bhLocations, []int{x, y})
-		occupiedPositions[position] = struct{}{}
-		blackHolesPlaced++
-	}
-
-	return bhLocations
-}
-
-func cellIdentificationKey(x, y int) string {
-	return fmt.Sprintf(keyCoordinatesFmt, x, y)
-}
-
 func (b *Board) addEdge(node1, node2 *cell) {
 	node1Key := cellIdentificationKey(node1.x, node1.y)
 	list1, ok1 := b.adjacencyList[node1Key]
@@ -244,6 +225,40 @@ func (b *Board) addVertex(node *cell) {
 	}
 }
 
+// @TODO make distribution even
+func distributeBlackHoles(sideCount, blackHolesTargetNumber int) [][]int {
+	//bh - black hole.
+	bhLocations := make([][]int, 0, blackHolesTargetNumber)
+
+	occupiedPositions := make(map[string]struct{}, blackHolesTargetNumber)
+
+	var blackHolesPlaced int
+	for blackHolesPlaced < blackHolesTargetNumber {
+		rand.Seed(time.Now().UnixNano())
+
+		// excluding this since it for game purposes it is acceptable to use it
+		//nolint: gosec
+		x := rand.Intn(sideCount)
+		//nolint: gosec
+		y := rand.Intn(sideCount)
+
+		position := fmt.Sprintf("%d_%d", x, y)
+		_, ok := occupiedPositions[position]
+		if ok {
+			continue
+		}
+		bhLocations = append(bhLocations, []int{x, y})
+		occupiedPositions[position] = struct{}{}
+		blackHolesPlaced++
+	}
+
+	return bhLocations
+}
+
+func cellIdentificationKey(x, y int) string {
+	return fmt.Sprintf(keyCoordinatesFmt, x, y)
+}
+
 // cell represents cell data
 type cell struct {
 	state cellState
@@ -255,20 +270,29 @@ type cell struct {
 type cellState int
 
 const (
-	opened cellState = 1
-	closed cellState = 0
+	openedState     cellState = 1
+	closedState     cellState = 0
+	blackHoledState cellState = -1
 )
 
 func (cs *cellState) setToOpened() {
-	*cs = opened
+	*cs = openedState
+}
+
+func (cs *cellState) setToBlackHoled() {
+	*cs = blackHoledState
 }
 
 func (cs cellState) isOpened() bool {
-	return cs == opened
+	return cs == openedState
+}
+
+func (cs cellState) isBlackHoled() bool {
+	return cs == blackHoledState
 }
 
 func (cs cellState) isClosed() bool {
-	return cs == closed
+	return cs == closedState
 }
 
 type cellValue int
@@ -288,12 +312,6 @@ func (c cellValue) isVoid() bool {
 
 func (c cellValue) isTouchingBlackHoles() bool {
 	return !c.isVoid() && !c.isBlackHole()
-}
-
-// icon is cell (vertex) view for board printing. E.g. if cell is closed then "c" will be displayed when printed
-var stateToIconMapping = map[cellState]string{
-	opened: "o",
-	closed: "c",
 }
 
 func (b *Board) generateBoard(blackHoles [][]int, rows, cols int) [][]*cell {
@@ -336,20 +354,16 @@ func (b *Board) Print() {
 	for i, row := range b.board {
 		for col := range row {
 			var (
-				cellView, paddingLen string
+				cellView string
 			)
 
-			if b.LoseState() && b.board[i][col].state.isOpened() {
-				paddingLen = fmt.Sprintf("%d", blackHoledPaddingLen)
-			} else {
-				paddingLen = fmt.Sprintf("%d", regularPaddingLen)
-			}
-
-			if b.board[i][col].state.isClosed() {
-				cellView = stateToIconMapping[closed]
-			} else {
+			switch {
+			case b.board[i][col].state.isClosed(), b.board[i][col].state.isBlackHoled():
+				cellView = stateToIconMapping()[b.board[i][col].state]
+			default:
 				cellView = fmt.Sprintf("%d", b.board[i][col].value)
 			}
+
 			fmt.Printf("%v %"+paddingLen+"s", cellView, "")
 			fmt.Print(" ")
 		}
@@ -357,19 +371,11 @@ func (b *Board) Print() {
 	}
 }
 
-// PrintStateless is for debugging (or verifying that game works correctly) purposes
+// PrintStateless is for debugging (or verifying that game works correctly) purposes.
+// shows all values on the board. Blackhole will be as -1
 func (b *Board) PrintStateless() {
 	for i, row := range b.board {
 		for col := range row {
-			var (
-				paddingLen string
-			)
-			if b.LoseState() {
-				paddingLen = fmt.Sprintf("%d", blackHoledPaddingLen)
-			} else {
-				paddingLen = fmt.Sprintf("%d", regularPaddingLen)
-			}
-
 			fmt.Printf("%v %"+paddingLen+"s", b.board[i][col].value, "")
 			fmt.Print(" ")
 		}

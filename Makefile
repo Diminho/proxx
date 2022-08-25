@@ -15,6 +15,14 @@ dependencies:
 	echo "Installing dependencies"
 	go mod vendor
 
+.PHONY: localbuild-windows
+localbuild-windows:
+	GOOS=windows GOARCH=amd64 go build -mod=vendor -o proxx.exe .
+
+localbuild:
+	go build -mod=vendor -o proxx .
+
+
 packages = \
 	./service/launch \
 	./service/ticket \
