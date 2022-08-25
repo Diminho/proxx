@@ -17,13 +17,13 @@ func start() *cobra.Command {
 				cellNumber, blackHoles int
 			)
 
-			fmt.Println("Enter board N size:")
+			fmt.Print("Enter board N size:")
 			_, err := fmt.Scanln(&cellNumber)
 			if err != nil {
 				return err
 			}
 
-			fmt.Println("Enter number of black holes:")
+			fmt.Print("Enter number of black holes:")
 			_, err = fmt.Scanln(&blackHoles)
 			if err != nil {
 				return err

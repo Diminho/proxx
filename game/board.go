@@ -257,13 +257,14 @@ func distributeBlackHoles(sideCount, blackHolesTargetNumber int) [][]int {
 
 	var blackHolesPlaced int
 	for blackHolesPlaced < blackHolesTargetNumber {
-		rand.Seed(time.Now().UnixNano())
+		// inits rand providing source to create uniformly-distributed number
+		r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 		// excluding this from linter check since it for game purposes it is acceptable to use it
 		//nolint: gosec
-		x := rand.Intn(sideCount)
+		x := r.Intn(sideCount)
 		//nolint: gosec
-		y := rand.Intn(sideCount)
+		y := r.Intn(sideCount)
 
 		position := cellIdentificationKey(x, y)
 		_, ok := occupiedPositions[position]

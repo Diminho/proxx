@@ -67,7 +67,7 @@ func (g *Game) Start(in *os.File) error {
 	g.playground.Print()
 	for {
 		var coordinateX, coordinateY int
-		fmt.Println("Enter board coordinates - row and column (two digits with space):")
+		fmt.Print("Enter board coordinates - row and column (two digits with space):")
 		_, err := fmt.Fscan(in, &coordinateX, &coordinateY)
 		if err != nil {
 			return err
