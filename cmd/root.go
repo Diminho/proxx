@@ -8,7 +8,7 @@ import (
 func Execute() error {
 	command := &cobra.Command{
 		Use:   "proxx",
-		Short: "proxx",
+		Short: "Proxx game",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Usage()
 		},

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/proxx/game"
 	"github.com/spf13/cobra"
@@ -31,7 +32,7 @@ func start() *cobra.Command {
 			b := game.NewBoard(cellNumber, blackHoles)
 			gameInstance := game.NewGame(b)
 
-			return gameInstance.Start()
+			return gameInstance.Start(os.Stdin)
 		},
 	}
 

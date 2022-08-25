@@ -19,15 +19,17 @@ dependencies:
 localbuild-windows:
 	GOOS=windows GOARCH=amd64 go build -mod=vendor -o proxx.exe .
 
+.PHONY: localbuild
 localbuild:
 	go build -mod=vendor -o proxx .
 
+.PHONY: localbuild-macos
+localbuild-macos:
+	 GOOS=darwin GOARCH=amd64 go build -mod=vendor -o proxx .
+
 
 packages = \
-	./service/launch \
-	./service/ticket \
-	./web/launch \
-	./web/ticket \
+	./game \
 
 .PHONY: test
 test:

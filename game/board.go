@@ -1,15 +1,22 @@
 package game
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
-	"os"
 	"time"
 )
 
 const (
 	keyCoordinatesFmt   = "%d_%d"
 	clickOutOfBoundsFmt = "click coordinate [%d %d] is out of board bounds %d x %d"
+
+	//padding when printing
+	paddingLen = "2"
+)
+
+var (
+	errCellOpened = errors.New("cell already opened")
 )
 
 // icon is cell (vertex) view for board printing. E.g. if cell is closed then "c" will be displayed when printed
@@ -21,46 +28,49 @@ func stateToIconMapping() map[cellState]string {
 	}
 }
 
+// defining directions (neighbors) of given node on the board.
+func directions() [][]int {
+	return [][]int{{1, 0}, {0, 1}, {-1, 0}, {0, -1}}
+}
+
 type boardState string
 
 const (
 	blackHoled boardState = "blackHoled"
 	cleared    boardState = "cleared"
-
-	//padding when printing
-	paddingLen = "2"
 )
 
 // Board represents board playground
 type Board struct {
 	boardState boardState
-	numNodes   []*cell
 	// represents relations between vertexes (cells)
 	adjacencyList map[string][]*cell
 	// represents board as two-dimensional slice. this is for printing the board
 	board           [][]*cell
 	cellList        map[string]*cell
-	sidecellsNumber int
+	sideCellsNumber int
 	// number of cells to be revealed in order to win
 	toBeRevealed     int
 	stateChangeHooks []func()
+	rows, cols       int
 }
 
 // NewBoard init new board as playground
 func NewBoard(sideCellsNumber, blackHolesNumber int) *Board {
 	totalCellNumber := sideCellsNumber * sideCellsNumber
 	b := &Board{
-		numNodes:        make([]*cell, 0, totalCellNumber),
 		adjacencyList:   make(map[string][]*cell),
-		sidecellsNumber: sideCellsNumber,
+		sideCellsNumber: sideCellsNumber,
 		cellList:        make(map[string]*cell, totalCellNumber),
 		toBeRevealed:    totalCellNumber - blackHolesNumber,
+		rows:            sideCellsNumber,
+		cols:            sideCellsNumber,
 	}
 
 	blackHolesLocations := distributeBlackHoles(sideCellsNumber, blackHolesNumber)
-	b.board = b.generateBoard(blackHolesLocations, sideCellsNumber, sideCellsNumber)
+	b.board = b.generateBoard(blackHolesLocations)
 
-	b.buildGraph(b.board, sideCellsNumber, sideCellsNumber)
+	b.buildGraph(b.board)
 	return b
 }
 
@@ -79,6 +89,7 @@ func (b *Board) LoseState() bool {
 	return b.boardState == blackHoled
 }
 
+// decrementToBeRevealed decrements field toBeRevealed to track cells that is yet to be revealed to identify user win
 func (b *Board) decrementToBeRevealed() {
 	b.toBeRevealed--
 	if b.toBeRevealed == 0 {
@@ -97,16 +108,20 @@ func (b *Board) SetOnStateChangeHook(hookFn func()) {
 	b.stateChangeHooks = append(b.stateChangeHooks, hookFn)
 }
 
+func isClickValid(click []int, sideCellsNumber int) bool {
+	return click[0] > sideCellsNumber || click[1] > sideCellsNumber ||
+		click[0] < 0 || click[1] < 0
+}
+
 // Click executes click on the given cell. click parameter is x,y coordinates ([]int{x,y})
 func (b *Board) Click(click []int) error {
-	if click[0] > b.sidecellsNumber || click[1] > b.sidecellsNumber {
-		return fmt.Errorf(clickOutOfBoundsFmt, click[0], click[1], b.sidecellsNumber, b.sidecellsNumber)
+	if isClickValid(click, b.sideCellsNumber) {
+		return fmt.Errorf(clickOutOfBoundsFmt, click[0], click[1], b.sideCellsNumber, b.sideCellsNumber)
 	}
 
 	currentCell := b.cellList[cellIdentificationKey(click[0], click[1])]
 	if currentCell.state.isOpened() {
-		_, err := fmt.Fprintln(os.Stdout, "cell already opened:")
-		return err
+		return errCellOpened
 	}
 	if currentCell.value.isBlackHole() {
 		b.setBoardState(blackHoled)
@@ -117,18 +132,20 @@ func (b *Board) Click(click []int) error {
 	return b.revealCells(cellIdentificationKey(click[0], click[1]))
 }
 
-// revealCells uses breadth first search to get connected cells with void value
+// revealCells uses breadth-first-search to get connected cells with void value.
+// BFS is used since it better suits for finding the closest connections (siblings/neighbors)
+// and during revealing connected neighbors this is exactly what we need
 func (b *Board) revealCells(cellID string) error {
 	currentCell := b.cellList[cellID]
 
 	currentCell.state.setToOpened()
+	// if cell touches black hole - exit immediately and open just this cell
 	if currentCell.value.isTouchingBlackHoles() {
 		b.decrementToBeRevealed()
 		return nil
 	}
 	visited := make(map[string]struct{})
 	queue := make([]*cell, 0)
-
 	queue = append(queue, currentCell)
 
 	for len(queue) > 0 {
@@ -139,7 +156,7 @@ func (b *Board) revealCells(cellID string) error {
 		if ok {
 			continue
 		}
-		// visit
+		// visit cell
 		visited[currentNodeID] = struct{}{}
 		currentNode.state.setToOpened()
 		b.decrementToBeRevealed()
@@ -173,32 +190,30 @@ func (b *Board) revealEntireBoard() {
 	}
 }
 
-func (b *Board) buildGraph(artifacts [][]*cell, rows, cols int) {
-	b.addVertexes(artifacts, rows, cols)
-	b.addEdges(artifacts, rows, cols)
+func (b *Board) buildGraph(board [][]*cell) {
+	b.addVertexes(board)
+	b.addEdges(board)
 }
 
-func (b *Board) addVertexes(artifacts [][]*cell, rows, cols int) {
-	for i := 0; i < rows; i++ {
-		for j := 0; j < cols; j++ {
-			b.addVertex(artifacts[i][j])
+func (b *Board) addVertexes(board [][]*cell) {
+	for i := 0; i < b.rows; i++ {
+		for j := 0; j < b.cols; j++ {
+			b.addVertex(board[i][j])
 		}
 	}
 }
 
-func (b *Board) addEdges(artifacts [][]*cell, rows, cols int) {
-	// defining directions (neighbors) places related to given node
-	directions := [][]int{{1, 0}, {0, 1}, {-1, 0}, {0, -1}}
+func (b *Board) addEdges(board [][]*cell) {
 	// adding edges that connect vertices based of neighbor placement
-	for i := 0; i < rows; i++ {
-		for j := 0; j < cols; j++ {
-			for _, direction := range directions {
+	for i := 0; i < b.rows; i++ {
+		for j := 0; j < b.cols; j++ {
+			for _, direction := range directions() {
 				dirI := i + direction[0]
 				dirJ := j + direction[1]
-				if (0 <= dirI && dirI < rows) &&
-					(0 <= dirJ && dirJ < cols) {
-					node1 := artifacts[i][j]
-					node2 := artifacts[dirI][dirJ]
+				if (0 <= dirI && dirI < b.rows) &&
+					(0 <= dirJ && dirJ < b.cols) {
+					node1 := board[i][j]
+					node2 := board[dirI][dirJ]
 					b.addEdge(node1, node2)
 				}
 			}
@@ -207,25 +222,26 @@ func (b *Board) addEdges(artifacts [][]*cell, rows, cols int) {
 }
 
 func (b *Board) addEdge(node1, node2 *cell) {
-	node1Key := cellIdentificationKey(node1.x, node1.y)
-	list1, ok1 := b.adjacencyList[node1Key]
-	if !ok1 {
+	if node1 == nil || node2 == nil {
 		return
 	}
+	node1Key := cellIdentificationKey(node1.x, node1.y)
+	list1 := b.adjacencyList[node1Key]
 	list1 = append(list1, node2)
 	b.adjacencyList[node1Key] = list1
 }
 
 func (b *Board) addVertex(node *cell) {
+	if node == nil {
+		return
+	}
 	key := cellIdentificationKey(node.x, node.y)
-	b.numNodes = append(b.numNodes, node)
 	_, ok := b.adjacencyList[key]
 	if !ok {
 		b.adjacencyList[key] = []*cell{}
 	}
 }
 
-// @TODO make distribution even
 func distributeBlackHoles(sideCount, blackHolesTargetNumber int) [][]int {
 	//bh - black hole.
 	bhLocations := make([][]int, 0, blackHolesTargetNumber)
@@ -236,13 +252,13 @@ func distributeBlackHoles(sideCount, blackHolesTargetNumber int) [][]int {
 	for blackHolesPlaced < blackHolesTargetNumber {
 		rand.Seed(time.Now().UnixNano())
 
-		// excluding this since it for game purposes it is acceptable to use it
+		// excluding this from linter check since it for game purposes it is acceptable to use it
 		//nolint: gosec
 		x := rand.Intn(sideCount)
 		//nolint: gosec
 		y := rand.Intn(sideCount)
 
-		position := fmt.Sprintf("%d_%d", x, y)
+		position := cellIdentificationKey(x, y)
 		_, ok := occupiedPositions[position]
 		if ok {
 			continue
@@ -255,6 +271,7 @@ func distributeBlackHoles(sideCount, blackHolesTargetNumber int) [][]int {
 	return bhLocations
 }
 
+// cellIdentificationKey builds key identify cells in the board. id key is basically x and y coordinates.
 func cellIdentificationKey(x, y int) string {
 	return fmt.Sprintf(keyCoordinatesFmt, x, y)
 }
@@ -314,39 +331,46 @@ func (c cellValue) isTouchingBlackHoles() bool {
 	return !c.isVoid() && !c.isBlackHole()
 }
 
-func (b *Board) generateBoard(blackHoles [][]int, rows, cols int) [][]*cell {
-	artifacts := make([][]*cell, rows)
-	for i := 0; i < rows; i++ {
-		artifacts[i] = make([]*cell, cols)
-		for j := 0; j < cols; j++ {
+func (b *Board) generateBoard(blackHoles [][]int) [][]*cell {
+	emptyBoard := b.initBoard()
+
+	return b.setItems(blackHoles, emptyBoard)
+}
+
+// initiates board will default cell values
+func (b *Board) initBoard() [][]*cell {
+	board := make([][]*cell, b.rows)
+	for i := 0; i < b.rows; i++ {
+		board[i] = make([]*cell, b.cols)
+		for j := 0; j < b.cols; j++ {
 			c := &cell{
 				value: void,
 				x:     i,
 				y:     j,
 			}
-			artifacts[i][j] = c
+			board[i][j] = c
 			b.cellList[cellIdentificationKey(i, j)] = c
 		}
 	}
 
-	return setArtifacts(blackHoles, artifacts, rows, cols)
+	return board
 }
 
-// setArtifacts sets black holes and cell counter that touch black holes
-func setArtifacts(blackHoles [][]int, artifacts [][]*cell, rows, cols int) [][]*cell {
+// setItems sets black holes and cell counters that touch cells with black holes
+func (b *Board) setItems(blackHoles [][]int, board [][]*cell) [][]*cell {
 	for _, r := range blackHoles {
 		rowI, colI := r[0], r[1]
-		artifacts[rowI][colI].value = blackHole
+		board[rowI][colI].value = blackHole
 		for i := rowI - 1; i <= rowI+1; i++ {
 			for j := colI - 1; j <= colI+1; j++ {
-				if (0 <= i && i < rows) && (0 <= j && j < cols) && artifacts[i][j].value != blackHole {
-					artifacts[i][j].value++
+				if (0 <= i && i < b.rows) && (0 <= j && j < b.cols) && board[i][j].value != blackHole {
+					board[i][j].value++
 				}
 			}
 		}
 	}
 
-	return artifacts
+	return board
 }
 
 // Print prints current state of board
@@ -371,14 +395,3 @@ func (b *Board) Print() {
 	}
 }
 
-// PrintStateless is for debugging (or verifying that game works correctly) purposes.
-// shows all values on the board. Blackhole will be as -1
-func (b *Board) PrintStateless() {
-	for i, row := range b.board {
-		for col := range row {
-			fmt.Printf("%v %"+paddingLen+"s", b.board[i][col].value, "")
-			fmt.Print(" ")
-		}
-		fmt.Println()
-	}
-}
